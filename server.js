@@ -54,22 +54,37 @@ let deviceStates = {
     }
 };
 
-// ================= API ENDPOINTS =================
-
-// Root endpoint
+// ================= ROOT ENDPOINT =================
 app.get('/', (req, res) => {
     res.json({
         name: 'Lumi Cloud Bridge API',
         version: '1.0.0',
         status: 'running',
+        timestamp: new Date().toISOString(),
         endpoints: {
+            root: '/',
             health: '/api/health',
             controlRelay: '/api/control/relay',
             controlLED: '/api/control/led/all',
-            deviceStatus: '/api/device/:deviceId/status'
+            controlSingleLED: '/api/control/led/single',
+            controlPattern: '/api/control/led/pattern',
+            controlBrightness: '/api/control/led/brightness',
+            deviceStatus: '/api/device/:deviceId/status',
+            devices: '/api/devices'
+        },
+        mqtt: {
+            connected: mqttClient ? mqttClient.connected : false,
+            broker: process.env.MQTT_HOST || 'not configured'
+        },
+        documentation: {
+            method: 'POST',
+            relay: '{"relayId":1,"state":true,"deviceId":"lumi_001"}',
+            led: '{"r":255,"g":0,"b":0,"deviceId":"lumi_001"}'
         }
     });
 });
+
+// ================= API ENDPOINTS =================
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -77,7 +92,8 @@ app.get('/api/health', (req, res) => {
         status: 'ok', 
         mqtt: mqttClient ? mqttClient.connected : false,
         timestamp: new Date().toISOString(),
-        port: PORT
+        port: PORT,
+        uptime: process.uptime()
     });
 });
 
@@ -135,7 +151,7 @@ app.post('/api/control/led/all', (req, res) => {
         }
         deviceStates[deviceId].led = { r, g, b };
         
-        res.json({ success: true });
+        res.json({ success: true, message: `LED set to RGB(${r},${g},${b})` });
     });
 });
 
@@ -155,7 +171,7 @@ app.post('/api/control/led/single', (req, res) => {
     const message = JSON.stringify({ led, r, g, b });
     
     mqttClient.publish(topic, message, { qos: 1 });
-    res.json({ success: true });
+    res.json({ success: true, message: `LED ${led} set to RGB(${r},${g},${b})` });
 });
 
 // Control LED Pattern
@@ -172,7 +188,7 @@ app.post('/api/control/led/pattern', (req, res) => {
     
     const topic = `lumi/${deviceId}/led/pattern`;
     mqttClient.publish(topic, pattern.toString(), { qos: 1 });
-    res.json({ success: true });
+    res.json({ success: true, message: `Pattern ${pattern} activated` });
 });
 
 // Control LED Brightness
@@ -189,7 +205,7 @@ app.post('/api/control/led/brightness', (req, res) => {
     
     const topic = `lumi/${deviceId}/led/brightness`;
     mqttClient.publish(topic, brightness.toString(), { qos: 1 });
-    res.json({ success: true });
+    res.json({ success: true, message: `Brightness set to ${brightness}` });
 });
 
 // Get Device Status
@@ -200,8 +216,9 @@ app.get('/api/device/:deviceId/status', (req, res) => {
         led: { r: 0, g: 0, b: 0 }
     };
     res.json({
-        ...status,
-        deviceId,
+        deviceId: deviceId,
+        relays: status.relays,
+        led: status.led,
         mqttConnected: mqttClient ? mqttClient.connected : false,
         timestamp: new Date().toISOString()
     });
@@ -210,15 +227,31 @@ app.get('/api/device/:deviceId/status', (req, res) => {
 // Get all devices
 app.get('/api/devices', (req, res) => {
     const devices = Object.keys(deviceStates).map(deviceId => ({
-        deviceId,
-        ...deviceStates[deviceId]
+        deviceId: deviceId,
+        relays: deviceStates[deviceId].relays,
+        led: deviceStates[deviceId].led
     }));
-    res.json({ devices });
+    res.json({ 
+        devices: devices,
+        count: devices.length,
+        timestamp: new Date().toISOString()
+    });
 });
 
-// 404 handler
+// 404 handler for undefined routes
 app.use((req, res) => {
-    res.status(404).json({ error: 'Route not found' });
+    res.status(404).json({ 
+        error: 'Route not found',
+        message: `Cannot ${req.method} ${req.path}`,
+        availableEndpoints: {
+            root: '/',
+            health: '/api/health',
+            controlRelay: 'POST /api/control/relay',
+            controlLED: 'POST /api/control/led/all',
+            deviceStatus: 'GET /api/device/:deviceId/status',
+            devices: 'GET /api/devices'
+        }
+    });
 });
 
 // ================= START SERVER =================
@@ -226,6 +259,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Lumi Cloud Bridge Server Running!`);
     console.log(`   Port: ${PORT}`);
     console.log(`   Listening on: 0.0.0.0:${PORT}`);
+    console.log(`   Root: http://0.0.0.0:${PORT}/`);
     console.log(`   Health: http://0.0.0.0:${PORT}/api/health`);
 });
 
