@@ -71,7 +71,7 @@ app.get('/', (req, res) => {
     });
 });
 
-// Health check
+// Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'ok', 
@@ -139,6 +139,59 @@ app.post('/api/control/led/all', (req, res) => {
     });
 });
 
+// Control Single LED
+app.post('/api/control/led/single', (req, res) => {
+    const { led, r, g, b, deviceId = DEFAULT_DEVICE_ID } = req.body;
+    
+    if (led === undefined || r === undefined || g === undefined || b === undefined) {
+        return res.status(400).json({ error: 'led, r, g, b required' });
+    }
+    
+    if (!mqttClient || !mqttClient.connected) {
+        return res.status(503).json({ error: 'MQTT not connected' });
+    }
+    
+    const topic = `lumi/${deviceId}/led/single`;
+    const message = JSON.stringify({ led, r, g, b });
+    
+    mqttClient.publish(topic, message, { qos: 1 });
+    res.json({ success: true });
+});
+
+// Control LED Pattern
+app.post('/api/control/led/pattern', (req, res) => {
+    const { pattern, deviceId = DEFAULT_DEVICE_ID } = req.body;
+    
+    if (pattern === undefined) {
+        return res.status(400).json({ error: 'pattern required' });
+    }
+    
+    if (!mqttClient || !mqttClient.connected) {
+        return res.status(503).json({ error: 'MQTT not connected' });
+    }
+    
+    const topic = `lumi/${deviceId}/led/pattern`;
+    mqttClient.publish(topic, pattern.toString(), { qos: 1 });
+    res.json({ success: true });
+});
+
+// Control LED Brightness
+app.post('/api/control/led/brightness', (req, res) => {
+    const { brightness, deviceId = DEFAULT_DEVICE_ID } = req.body;
+    
+    if (brightness === undefined || brightness < 0 || brightness > 255) {
+        return res.status(400).json({ error: 'brightness required (0-255)' });
+    }
+    
+    if (!mqttClient || !mqttClient.connected) {
+        return res.status(503).json({ error: 'MQTT not connected' });
+    }
+    
+    const topic = `lumi/${deviceId}/led/brightness`;
+    mqttClient.publish(topic, brightness.toString(), { qos: 1 });
+    res.json({ success: true });
+});
+
 // Get Device Status
 app.get('/api/device/:deviceId/status', (req, res) => {
     const { deviceId } = req.params;
@@ -149,18 +202,34 @@ app.get('/api/device/:deviceId/status', (req, res) => {
     res.json({
         ...status,
         deviceId,
-        mqttConnected: mqttClient ? mqttClient.connected : false
+        mqttConnected: mqttClient ? mqttClient.connected : false,
+        timestamp: new Date().toISOString()
     });
+});
+
+// Get all devices
+app.get('/api/devices', (req, res) => {
+    const devices = Object.keys(deviceStates).map(deviceId => ({
+        deviceId,
+        ...deviceStates[deviceId]
+    }));
+    res.json({ devices });
+});
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Route not found' });
 });
 
 // ================= START SERVER =================
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Lumi Cloud Bridge Server Running!`);
     console.log(`   Port: ${PORT}`);
-    console.log(`   Health: http://localhost:${PORT}/api/health`);
+    console.log(`   Listening on: 0.0.0.0:${PORT}`);
+    console.log(`   Health: http://0.0.0.0:${PORT}/api/health`);
 });
 
-// ================= KEEP ALIVE (Prevent Container from Stopping) =================
+// ================= KEEP ALIVE =================
 process.on('SIGINT', () => {
     console.log('Shutting down gracefully...');
     if (mqttClient) mqttClient.end();
