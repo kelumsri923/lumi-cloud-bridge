@@ -1,0 +1,11 @@
+{
+  "name": "Lumi Cloud Bridge",
+  "short_name": "Lumi",
+  "description": "Control ESP32 devices from anywhere",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#00d4ff",
+  "orientation": "portrait",
+  "icons": []
+}
